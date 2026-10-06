@@ -20,13 +20,24 @@
 // even when only modest stuff is being done. Not usable. Hence, the workload is done in C.
 // Lua tables are avoided, Lua strings are preferred.
 
+// Notation:
+//
+// - msg_struct:  Lua table as provided by the pymavgen Lua files for each MAVLink message
+//
+// - msg_frame:   complete MAVLink frame as Lua string
+//
+// - msg_table:   Lua table containing the MAVLink message fields, payload is a Lua string
+//
+// - data_table:  Lua table of integers representing the data
+
+
 
 //============================================================
 //== mavlinkPop(), Parser, Decoder
 //============================================================
 
 // created with help by free ChatGPT
-static bool mavlink_decode_scalar(lua_State *L, const char* format, const uint8_t* payload, size_t payloadLen, size_t* payloadPos)
+static bool _mavlink_decode_scalar(lua_State *L, const char* format, const uint8_t* payload, size_t payloadLen, size_t* payloadPos)
 {
   if (format[0] != '<' || format[1] == '\0') {
     return false;
@@ -97,7 +108,7 @@ static bool mavlink_decode_scalar(lua_State *L, const char* format, const uint8_
 
 
 // created with help by free ChatGPT
-static bool mavlink_decode_payload(lua_State *L, const uint8_t* payload, size_t payloadLen)
+static bool _mavlink_decode_payload(lua_State *L, const uint8_t* payload, size_t payloadLen)
 {
 const int resultIndex = 3;
 size_t payloadPos = 0;
@@ -160,7 +171,7 @@ char buffer[256];
       lua_createtable(L, count, 0);
       int arrayIndex = lua_gettop(L);
       for (int j = 1; j <= count; j++) {
-        if (!mavlink_decode_scalar(L, format, payload, payloadLen, &payloadPos)) {
+        if (!_mavlink_decode_scalar(L, format, payload, payloadLen, &payloadPos)) {
           lua_pop(L, 2); // pop array, field
           lua_pop(L, 1); // pop fields
           return false;
@@ -170,7 +181,7 @@ char buffer[256];
       lua_setfield(L, resultIndex, name);
     }
     else { // scalar: <f  <d  <b  <B  <i2  <I2  <i4  <I4  <i8  <I8, e.g. { "type", "<B" },
-      if (!mavlink_decode_scalar(L, format, payload, payloadLen, &payloadPos)) {
+      if (!_mavlink_decode_scalar(L, format, payload, payloadLen, &payloadPos)) {
         lua_pop(L, 2); // pop field, fields
         return false;
       }
@@ -184,7 +195,9 @@ char buffer[256];
 }
 
 
-// use:     local payload = mavlinkDecode(msg_struct, msg)
+//------------------------------------------------------------
+// mavlinkDecode() : return payload as Lua string
+// use:     local payload = mavlinkDecode(msg_struct, msg_table)
 // success: returns payload as Lua table
 // nil:     error
 static int luaMavlinkDecode(lua_State *L)
@@ -192,7 +205,7 @@ static int luaMavlinkDecode(lua_State *L)
 size_t payloadLen = 0;
 
     luaL_checktype(L, 1, LUA_TTABLE); // msg_struct
-    luaL_checktype(L, 2, LUA_TTABLE); // msg table from mavlinkPop()
+    luaL_checktype(L, 2, LUA_TTABLE); // msg_table from mavlinkPop()
 
     // msg.payload
     lua_getfield(L, 2, "payload");
@@ -201,7 +214,7 @@ size_t payloadLen = 0;
 
     // create return table
     lua_createtable(L, 0, 8);
-    if (!mavlink_decode_payload(L, payload, payloadLen)) {
+    if (!_mavlink_decode_payload(L, payload, payloadLen)) {
         lua_pop(L, 1); // pop return table
         lua_pushnil(L);
         return 1;
@@ -211,8 +224,10 @@ size_t payloadLen = 0;
 }
 
 
+//------------------------------------------------------------
+// mavlinkPop() : pop in next message as a msg_table
 // use:     local msg = mavlinkPop()
-// success: returns Lua table, payload is Lua string
+// success: returns msg_table, payload is Lua string
 // nil:     error
 static int luaMavlinkPop(lua_State *L)
 {
@@ -246,7 +261,7 @@ static fmav_status_t status = {};
         lua_pushtableinteger(L, "compid", msg.compid);
         lua_pushtableinteger(L, "msgid", msg.msgid);
 
-        lua_pushlstring(L, (const char*)msg.payload, msg.len);
+        lua_pushlstring(L, (const char*)msg.payload, msg.len); // payload as Lua string
         lua_setfield(L, -2, "payload");
 
         lua_pushtableinteger(L, "res", res);
@@ -263,7 +278,7 @@ static fmav_status_t status = {};
 //============================================================
 
 // created with help by free ChatGPT
-static bool mavlink_encode_scalar(lua_State *L, const char* format, uint8_t* payload, size_t* payloadLen)
+static bool _mavlink_encode_scalar(lua_State *L, const char* format, uint8_t* payload, size_t* payloadLen)
 {
   switch (format[1]) {
     case 'b': case 'B':
@@ -296,7 +311,7 @@ static bool mavlink_encode_scalar(lua_State *L, const char* format, uint8_t* pay
 
 
 // created with help by free ChatGPT
-static bool mavlink_encode_payload(lua_State *L, int msgstructIndex, uint8_t* payload, size_t* payloadLen)
+static bool _mavlink_encode_payload(lua_State *L, int msgstructIndex, uint8_t* payload, size_t* payloadLen)
 {
   lua_getfield(L, msgstructIndex, "fields"); // msg_struct.fields  // index = 1
   luaL_checktype(L, -1, LUA_TTABLE);
@@ -360,7 +375,7 @@ static bool mavlink_encode_payload(lua_State *L, int msgstructIndex, uint8_t* pa
         } else {
           lua_pushnil(L);
         }
-        if (!mavlink_encode_scalar(L, format, payload, payloadLen)) {
+        if (!_mavlink_encode_scalar(L, format, payload, payloadLen)) {
           lua_pop(L, 2);
           lua_pop(L, 1);
           return false;
@@ -369,7 +384,7 @@ static bool mavlink_encode_payload(lua_State *L, int msgstructIndex, uint8_t* pa
       }
     }
     else { // scalar: <f  <d  <b  <B  <i2  <I2  <i4  <I4  <i8  <I8, e.g. { "type", "<B" },
-      if (!mavlink_encode_scalar(L, format, payload, payloadLen)) {
+      if (!_mavlink_encode_scalar(L, format, payload, payloadLen)) {
         lua_pop(L, 2);
         lua_pop(L, 1);
         return false;
@@ -387,7 +402,7 @@ static bool mavlink_encode_payload(lua_State *L, int msgstructIndex, uint8_t* pa
 }
 
 
-static bool mavlink_encode_frame(lua_State *L, uint8_t* frame, size_t* frameLen)
+static bool _mavlink_encode_frame(lua_State *L, uint8_t* frame, size_t* frameLen)
 {
 size_t payloadLen = 0;
 uint16_t crc;
@@ -410,7 +425,7 @@ uint16_t crc;
 
   // encode payload
   // needs to come here so we know payload length
-  if (!mavlink_encode_payload(L, 4, frame + 10, &payloadLen)) {
+  if (!_mavlink_encode_payload(L, 4, frame + 10, &payloadLen)) {
     return false;
   }
 
@@ -446,7 +461,9 @@ uint16_t crc;
 }
 
 
-// use:     local msg_frame = mavlinkEncode(seq, sysid, compid, msg_struct, data)
+//------------------------------------------------------------
+// mavlinkEncode() : encode into a msg_frame
+// use:     local msg_frame = mavlinkEncode(seq, sysid, compid, msg_struct, data_table)
 // success: returns Lua string
 // nil:     error
 static int luaMavlinkEncode(lua_State *L)
@@ -458,20 +475,22 @@ size_t frameLen = 0;
     luaL_checkinteger(L, 2); // sysid
     luaL_checkinteger(L, 3); // compid
     luaL_checktype(L, 4, LUA_TTABLE); // msg_struct
-    luaL_checktype(L, 5, LUA_TTABLE); // data
+    luaL_checktype(L, 5, LUA_TTABLE); // data_table
 
-    if (!mavlink_encode_frame(L, frame, &frameLen)) {
+    if (!_mavlink_encode_frame(L, frame, &frameLen)) {
         lua_pushnil(L);
         return 1;
     }
 
-    lua_pushlstring(L, (const char *)frame, frameLen);
+    lua_pushlstring(L, (const char *)frame, frameLen); // return frame as Lua string
     return 1;
 }
 
 
+//------------------------------------------------------------
+// mavlinkPush() : push out a msg_frame
 // use:   local res = mavlinkPush(msg_frame) or
-//        local res = mavlinkPush(seq, sysid, compid, msg_struct, data)
+//        local res = mavlinkPush(seq, sysid, compid, msg_struct, data_table)
 // true:  successfully queued
 // nil:   no CRSF module selected
 // false: not enough space in output FIFO, or incorrect parameter(s)
@@ -494,12 +513,12 @@ static int luaMavlinkPush(lua_State* L)
     if (nargs == 1) { // used as mavlinkPush(msg_frame)
         luaL_checklstring(L, 1, NULL); // msg_frame
     }
-    else if (nargs == 5) { // used as mavlinkPush(seq, sysid, compid, msg_struct, data)
+    else if (nargs == 5) { // used as mavlinkPush(seq, sysid, compid, msg_struct, data_table)
         luaL_checkinteger(L, 1); // seq
         luaL_checkinteger(L, 2); // sysid
         luaL_checkinteger(L, 3); // compid
         luaL_checktype(L, 4, LUA_TTABLE); // msg_struct
-        luaL_checktype(L, 5, LUA_TTABLE); // data
+        luaL_checktype(L, 5, LUA_TTABLE); // data_table
     }
     else {
         lua_pushboolean(L, false);
@@ -509,7 +528,7 @@ static int luaMavlinkPush(lua_State* L)
     size_t len;
     if (nargs == 5) {
         uint8_t data[300];
-        if (!mavlink_encode_frame(L, data, &len) || !mavlinkTelemetryBuffer.outputFifoPtr->hasSpace(len)) {
+        if (!_mavlink_encode_frame(L, data, &len) || !mavlinkTelemetryBuffer.outputFifoPtr->hasSpace(len)) {
             lua_pushboolean(L, false);
             return 1;
         }
@@ -639,6 +658,10 @@ static int luaMavlinkPushPacket(lua_State* L)
 //== mavlinkIni(), Initialization
 //============================================================
 
+//------------------------------------------------------------
+// luaMavlinkInit()
+// use:   local res = luaMavlinkInit(rx_buf_size, tx_bus_size)
+//
 static int luaMavlinkInit(lua_State* L)
 {
     int nargs = lua_gettop(L);

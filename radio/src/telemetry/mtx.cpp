@@ -50,6 +50,8 @@ bool MavlinkTelemetryBuffer::Init(uint32_t _rx_fifo_size, uint32_t _tx_fifo_size
 }
 
 
+//-- receiving
+
 bool processCrossfireMavlinkEnvelopeFrame(uint8_t* rxBuffer, uint8_t rxBufferCount)
 {
     if (!mavlinkTelemetryBuffer.inputFifoPtr) return false;
@@ -140,6 +142,8 @@ bool processCrossfireMbEnvelopeFrame(uint8_t* rxBuffer, uint8_t rxBufferCount)
     return true;
 }
 
+
+//-- transmitting
 
 uint8_t createCrossfireMavlinkEnvelopeFrame(uint8_t* frame)
 {
