@@ -17,6 +17,8 @@ MavlinkTelemetryBuffer mavlinkTelemetryBuffer;
 
 bool MavlinkTelemetryBuffer::Init(uint32_t _rx_fifo_size, uint32_t _tx_fifo_size)
 {
+    rx_msg_cnt = 0;
+
     if (inputFifoPtr && (rx_fifo_size == _rx_fifo_size) &&
         outputFifoPtr && (tx_fifo_size == _tx_fifo_size)) {
         return true;
@@ -47,6 +49,35 @@ bool MavlinkTelemetryBuffer::Init(uint32_t _rx_fifo_size, uint32_t _tx_fifo_size
     tx_fifo_size = _tx_fifo_size;
 
     return true;
+}
+
+
+bool MavlinkTelemetryBuffer::RegisterMessage(uint32_t _msg_id)
+{
+    if (_msg_id == 0) return true; // HEARTBEATs do not need to be registered
+
+    for (uint8_t i = 0; i < rx_msg_cnt; i++) {
+        if (rx_msg[i] == _msg_id) return true; // msg id is already in registry
+    }
+
+    if (rx_msg_cnt >= TELEMETRY_MAVLINK_MSG_REGISTRY_SIZE) return false; // no free slot
+
+    rx_msg[rx_msg_cnt] = _msg_id; // register msg_id
+    rx_msg_cnt++;
+
+    return true;
+}
+
+
+bool MavlinkTelemetryBuffer::AcceptMessage(uint32_t _msg_id)
+{
+    if (_msg_id == 0) return true; // HEARTBEATs are always registered
+
+    for (uint8_t i = 0; i < rx_msg_cnt; i++) {
+        if (rx_msg[i] == _msg_id) return true; // msg id is in registry
+    }
+
+    return false;
 }
 
 

@@ -23,13 +23,28 @@
 // Notation:
 //
 // - msg_struct:  Lua table as provided by the pymavgen Lua files for each MAVLink message
-//
 // - msg_frame:   complete MAVLink frame as Lua string
-//
 // - msg_table:   Lua table containing the MAVLink message fields, payload is a Lua string
 //
-// - data_table:  Lua table of integers representing the data
-
+// - data:        Lua table of integers representing the data
+//
+// Usage:
+//
+// Receiving:
+//    local msg_table = mavlinkPop() -- returns msg_table or nil, payload is Lua string
+//    if msg_table then
+//        local payload = mavlinkDecode(msg_struct, msg_table) -- returns payload as Lua table or nil
+//    end
+//
+// Sending:
+// 1:
+//    local res = mavlinkPush(seq, sysid, compid, msg_struct, data_table) -- returns nil, false or true
+//
+// 2:
+//    local msg_frame = mavlinkEncode(seq, sysid, compid, msg_struct, data_table) -- returns msg_frame or nil
+//    if msg_frame then
+//        local res = mavlinkPush(msg_frame) -- returns nil, false or true
+//    end
 
 
 //============================================================
@@ -196,7 +211,7 @@ char buffer[256];
 
 
 //------------------------------------------------------------
-// mavlinkDecode() : return payload as Lua string
+// mavlinkDecode() : decode msg_table, returns payload as Lua table or nil
 // use:     local payload = mavlinkDecode(msg_struct, msg_table)
 // success: returns payload as Lua table
 // nil:     error
@@ -225,7 +240,7 @@ size_t payloadLen = 0;
 
 
 //------------------------------------------------------------
-// mavlinkPop() : pop in next message as a msg_table
+// mavlinkPop() : pop in next message, returns msg_table or nil
 // use:     local msg = mavlinkPop()
 // success: returns msg_table, payload is Lua string
 // nil:     error
@@ -247,10 +262,13 @@ static fmav_status_t status = {};
         // can return RESULT_NONE, RESULT_HAS_HEADER, RESULT_MSGID_UNKNOWN, RESULT_CRC_ERROR, RESULT_OK
         int8_t res = fmav_parse_to_msg(&msg, &status, c);
 
-        switch (res) {
-            case FASTMAVLINK_PARSE_RESULT_MSGID_UNKNOWN: res = -1; break;
-            case FASTMAVLINK_PARSE_RESULT_OK: res = 1; break;
-            default: continue;
+        if (res == FASTMAVLINK_PARSE_RESULT_OK && mavlinkTelemetryBuffer.AcceptMessage(msg.msgid)) {
+            res = 1;
+        } else
+        if (res == FASTMAVLINK_PARSE_RESULT_MSGID_UNKNOWN && mavlinkTelemetryBuffer.AcceptMessage(msg.msgid)) {
+            res = -1;
+        } else {
+            continue; // no complete frame, or do not accept message
         }
 
         lua_createtable(L, 0, 7);
@@ -462,8 +480,8 @@ uint16_t crc;
 
 
 //------------------------------------------------------------
-// mavlinkEncode() : encode into a msg_frame
-// use:     local msg_frame = mavlinkEncode(seq, sysid, compid, msg_struct, data_table)
+// mavlinkEncode() : encode message, returns msg_frame or nil
+// use:     local msg_frame = mavlinkEncode(seq, sysid, compid, msg_struct, data)
 // success: returns Lua string
 // nil:     error
 static int luaMavlinkEncode(lua_State *L)
@@ -488,9 +506,9 @@ size_t frameLen = 0;
 
 
 //------------------------------------------------------------
-// mavlinkPush() : push out a msg_frame
+// mavlinkPush() : push out a msg_frame, returns nil, false or true
 // use:   local res = mavlinkPush(msg_frame) or
-//        local res = mavlinkPush(seq, sysid, compid, msg_struct, data_table)
+//        local res = mavlinkPush(seq, sysid, compid, msg_struct, data)
 // true:  successfully queued
 // nil:   no CRSF module selected
 // false: not enough space in output FIFO, or incorrect parameter(s)
@@ -659,7 +677,7 @@ static int luaMavlinkPushPacket(lua_State* L)
 //============================================================
 
 //------------------------------------------------------------
-// luaMavlinkInit()
+// luaMavlinkInit(), returns nil, false or true
 // use:   local res = luaMavlinkInit(rx_buf_size, tx_bus_size)
 //
 static int luaMavlinkInit(lua_State* L)
@@ -674,7 +692,7 @@ static int luaMavlinkInit(lua_State* L)
         luaL_checkinteger(L, 1); // rx buf size
         luaL_checkinteger(L, 2); // tx buf size
     } else {
-        lua_pushboolean(L, false);
+        lua_pushnil(L);
         return 1;
     }
 
@@ -701,6 +719,34 @@ static int luaMavlinkInit(lua_State* L)
 }
 
 
+//------------------------------------------------------------
+// mavlinkRegsiterMsg(), return nil, false or true
+// use:   local res = mavlinkRegsiterMsg(msg_struct)
+// true:  successfully registered
+// nil:   not a Lua table
+// false: not enough space in registry
+static int luaMavlinkRegisterMessage(lua_State* L)
+{
+    int nargs = lua_gettop(L);
+    if (nargs == 1) {
+        luaL_checktype(L, 1, LUA_TTABLE); // msg_struct table
+    }
+    else {
+        lua_pushnil(L);
+        return 1;
+    }
+
+    lua_getfield(L, 1, "id"); // msg_struct.id
+    uint32_t msgid = (uint32_t)luaL_checkinteger(L, -1);
+    lua_pop(L, 1);
+
+    bool res = mavlinkTelemetryBuffer.RegisterMessage(msgid);
+
+    lua_pushboolean(L, res);
+    return 1;
+}
+
+
 //============================================================
 //== mavlink Lua table
 //============================================================
@@ -708,6 +754,7 @@ static int luaMavlinkInit(lua_State* L)
 extern "C" {
 LROT_BEGIN(mavlinklib, NULL, 0)
   LROT_FUNCENTRY( mavlinkInit, luaMavlinkInit )
+  LROT_FUNCENTRY( mavlinkRegisterMsg, luaMavlinkRegisterMessage )
   LROT_FUNCENTRY( mavlinkPop, luaMavlinkPop )
   LROT_FUNCENTRY( mavlinkDecode, luaMavlinkDecode )
   LROT_FUNCENTRY( mavlinkEncode, luaMavlinkEncode )

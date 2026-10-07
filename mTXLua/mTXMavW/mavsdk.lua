@@ -76,6 +76,26 @@ mavsdk.PARAM_REQUEST_READ = PARAM_REQUEST_READ
 mavsdk.PARAM_VALUE = PARAM_VALUE
 
 
+-- if we don't register any messages, all will be accepted
+-- if some are registered, only these will be passed on to the Lua script
+-- HEARTBEATs are always passed on and do not need to be registered
+-- can help with Lua load
+-- one however has then to ensure that all messages which should be received
+-- are registered
+mavlinkRegisterMsg(SYS_STATUS)
+mavlinkRegisterMsg(ATTITUDE)
+mavlinkRegisterMsg(VFR_HUD)
+mavlinkRegisterMsg(STATUSTEXT)
+mavlinkRegisterMsg(GPS_RAW_INT)
+mavlinkRegisterMsg(GPS2_RAW)
+mavlinkRegisterMsg(GLOBAL_POSITION_INT)
+mavlinkRegisterMsg(BATTERY_STATUS)
+mavlinkRegisterMsg(EKF_STATUS_REPORT)
+mavlinkRegisterMsg(COMMAND_LONG)
+mavlinkRegisterMsg(PARAM_REQUEST_READ)
+mavlinkRegisterMsg(PARAM_VALUE)
+
+
 ----------------------------------------------------------------------
 -- Callbacks
 ----------------------------------------------------------------------

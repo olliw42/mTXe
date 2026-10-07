@@ -141,6 +141,8 @@ class DynamicFifo
 #define TELEMETRY_MAVLINK_INPUT_FIFO_SIZE   4*512 // maybe not enough when direct path to MPmQGC exists
 #define TELEMETRY_MAVLINK_OUTPUT_FIFO_SIZE  4*512 // probably more than enough
 
+#define TELEMETRY_MAVLINK_MSG_REGISTRY_SIZE  32
+
 
 class MavlinkTelemetryBuffer {
   public:
@@ -182,6 +184,13 @@ class MavlinkTelemetryBuffer {
     uint32_t outputFifoSize(void) { return (outputFifoPtr) ? outputFifoPtr->size() : 0; }
 
     bool Init(uint32_t _rx_fifo_size, uint32_t _tx_fifo_size);
+
+    // msg id registration
+    uint8_t rx_msg_cnt = 0;
+    uint32_t rx_msg[TELEMETRY_MAVLINK_MSG_REGISTRY_SIZE] = {};
+
+    bool RegisterMessage(uint32_t _msg_id);
+    bool AcceptMessage(uint32_t _msg_id);
 };
 
 extern MavlinkTelemetryBuffer mavlinkTelemetryBuffer;
