@@ -1,0 +1,1 @@
+For installation, go into the SD folder, grab all its content and copy it over to the root of your radio's SD card (this may take a few dozen seconds).
